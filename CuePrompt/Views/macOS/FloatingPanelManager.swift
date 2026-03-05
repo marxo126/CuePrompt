@@ -67,56 +67,9 @@ struct FloatingTeleprompterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar
-            HStack {
-                Button("Close") { onClose() }
-                Spacer()
-                Text(viewModel.speedLabel)
-                    .font(.headline.monospaced())
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            // Teleprompter content
-            ZStack {
-                settings.backgroundColor
-
-                TeleprompterContentView(script: script, settings: settings, viewModel: viewModel)
-
-                CenterLineIndicator()
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        TimerView(viewModel: viewModel)
-                            .padding()
-                    }
-                    Spacer()
-                }
-                .allowsHitTesting(false)
-            }
-
-            // Transport controls
-            HStack(spacing: 24) {
-                TransportControlsView(viewModel: viewModel, style: .fullscreen)
-
-                Spacer()
-
-                GeometryReader { geo in
-                    Rectangle()
-                        .fill(Color.green)
-                        .frame(width: geo.size.width * viewModel.progress, height: 3)
-                }
-                .frame(width: 100, height: 3)
-                .background(Color.white.opacity(0.2))
-                .clipShape(Capsule())
-            }
-            .padding()
-            .background(Color.black)
+            TeleprompterTopBar(viewModel: viewModel, onClose: onClose)
+            TeleprompterContentArea(script: script, settings: settings, viewModel: viewModel)
+            TransportBar(viewModel: viewModel, controlStyle: .fullscreen, progressWidth: 100)
         }
         .background(settings.backgroundColor)
         .onAppear {

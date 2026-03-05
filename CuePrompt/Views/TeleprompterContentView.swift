@@ -83,7 +83,7 @@ struct TeleprompterContentView: View {
         scaledText = AttributedString(ns)
     }
 
-    private static func scaledAttributedString(_ attrString: NSAttributedString, fontSize: Double, fontColor: Color) -> NSAttributedString {
+    static func scaledAttributedString(_ attrString: NSAttributedString, fontSize: Double, fontColor: Color) -> NSAttributedString {
         let mutable = NSMutableAttributedString(attributedString: attrString)
         let scaleFactor = fontSize / RichTextCoordinatorCore.defaultFontSize
         let fullRange = NSRange(location: 0, length: mutable.length)
@@ -105,9 +105,11 @@ struct TeleprompterContentView: View {
         return mutable
     }
 
+    private static let defaultLabelComponents = PlatformColor.defaultLabelColor.sRGBComponents()
+
     private static func isDefaultLabelColor(_ color: PlatformColor) -> Bool {
         let c = color.sRGBComponents()
-        let label = PlatformColor.defaultLabelColor.sRGBComponents()
+        let label = defaultLabelComponents
         let threshold: CGFloat = 0.1
         return abs(c.r - label.r) < threshold && abs(c.g - label.g) < threshold && abs(c.b - label.b) < threshold
     }

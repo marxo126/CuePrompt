@@ -29,9 +29,18 @@ final class AppSettings {
     // Floating window (macOS)
     var floatingWindowOpacity: Double = 1.0
 
+    // Presentation mode (iOS)
+    var presentationMode: PresentationMode = .resizableSheet
+
     enum TimerMode: String, CaseIterable {
         case countUp = "Count Up"
         case countdown = "Countdown"
+    }
+
+    enum PresentationMode: String, CaseIterable {
+        case fullScreen = "Full Screen"
+        case resizableSheet = "Resizable Sheet"
+        case floating = "Floating (PiP)"
     }
 
     // Persistence via UserDefaults
@@ -49,6 +58,7 @@ final class AppSettings {
         static let floatingOpacity = "cp_floatingOpacity"
         static let fontColor = "cp_fontColor"
         static let bgColor = "cp_bgColor"
+        static let presentationMode = "cp_presentationMode"
     }
 
     func save() {
@@ -64,6 +74,7 @@ final class AppSettings {
         d.set(floatingWindowOpacity, forKey: Key.floatingOpacity)
         d.set(fontColor.hexString, forKey: Key.fontColor)
         d.set(backgroundColor.hexString, forKey: Key.bgColor)
+        d.set(presentationMode.rawValue, forKey: Key.presentationMode)
     }
 
     func load() {
@@ -99,6 +110,10 @@ final class AppSettings {
         }
         if let hex = d.string(forKey: Key.bgColor) {
             backgroundColor = Color(hex: hex)
+        }
+        if let modeStr = d.string(forKey: Key.presentationMode),
+           let mode = PresentationMode(rawValue: modeStr) {
+            presentationMode = mode
         }
     }
 }

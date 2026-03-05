@@ -26,6 +26,7 @@
 		A10020 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020; };
 		A10021 /* FormattingToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021; };
 		A10022 /* TransportControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022; };
+		A10023 /* PiPTeleprompterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +51,7 @@
 		B10020 /* RichTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditor.swift; sourceTree = "<group>"; };
 		B10021 /* FormattingToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingToolbar.swift; sourceTree = "<group>"; };
 		B10022 /* TransportControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportControlsView.swift; sourceTree = "<group>"; };
+		B10023 /* PiPTeleprompterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPTeleprompterManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -118,6 +120,7 @@
 				B10021 /* FormattingToolbar.swift */,
 				B10022 /* TransportControlsView.swift */,
 				D10006 /* macOS */,
+				D10007 /* iOS */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -128,6 +131,14 @@
 				B10014 /* FloatingPanelManager.swift */,
 			);
 			path = macOS;
+			sourceTree = "<group>";
+		};
+		D10007 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				B10023 /* PiPTeleprompterManager.swift */,
+			);
+			path = iOS;
 			sourceTree = "<group>";
 		};
 		D10008 /* Utilities */ = {
@@ -233,6 +244,7 @@
 				A10020 /* RichTextEditor.swift in Sources */,
 				A10021 /* FormattingToolbar.swift in Sources */,
 				A10022 /* TransportControlsView.swift in Sources */,
+				A10023 /* PiPTeleprompterManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

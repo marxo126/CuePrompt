@@ -69,7 +69,9 @@ struct FormattingToolbar: View {
                             .fill(Color.secondary.opacity(0.1))
                     )
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .fixedSize()
 
             Divider().frame(height: 20)
@@ -97,7 +99,9 @@ struct FormattingToolbar: View {
                             .fill(Color.secondary.opacity(0.1))
                     )
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .fixedSize()
 
             // Highlight color
@@ -129,7 +133,9 @@ struct FormattingToolbar: View {
                             .fill(Color.secondary.opacity(0.1))
                     )
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .fixedSize()
 
             Divider().frame(height: 20)
