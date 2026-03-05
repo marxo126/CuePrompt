@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 @Observable
 final class AppSettings {
@@ -10,6 +15,9 @@ final class AppSettings {
     var horizontalPadding: Double = 24
 
     // Scroll
+    static let speedMin: Double = 0.5
+    static let speedMax: Double = 5.0
+    static let speedStep: Double = 0.25
     var defaultScrollSpeed: Double = 1.5
     var isMirrored: Bool = false
 
@@ -20,7 +28,6 @@ final class AppSettings {
 
     // Floating window (macOS)
     var floatingWindowOpacity: Double = 1.0
-    var isFloatingEnabled: Bool = false
 
     enum TimerMode: String, CaseIterable {
         case countUp = "Count Up"
@@ -28,57 +35,69 @@ final class AppSettings {
     }
 
     // Persistence via UserDefaults
-    private static let defaults = UserDefaults.standard
+    private nonisolated(unsafe) static let defaults = UserDefaults.standard
+
+    private enum Key {
+        static let fontSize = "cp_fontSize"
+        static let scrollSpeed = "cp_scrollSpeed"
+        static let mirrored = "cp_mirrored"
+        static let lineSpacing = "cp_lineSpacing"
+        static let horizontalPadding = "cp_horizontalPadding"
+        static let timerMode = "cp_timerMode"
+        static let countdownStart = "cp_countdownStart"
+        static let timerWarning = "cp_timerWarning"
+        static let floatingOpacity = "cp_floatingOpacity"
+        static let fontColor = "cp_fontColor"
+        static let bgColor = "cp_bgColor"
+    }
 
     func save() {
         let d = Self.defaults
-        d.set(fontSize, forKey: "cp_fontSize")
-        d.set(defaultScrollSpeed, forKey: "cp_scrollSpeed")
-        d.set(isMirrored, forKey: "cp_mirrored")
-        d.set(lineSpacing, forKey: "cp_lineSpacing")
-        d.set(horizontalPadding, forKey: "cp_horizontalPadding")
-        d.set(timerMode.rawValue, forKey: "cp_timerMode")
-        d.set(countdownStartSeconds, forKey: "cp_countdownStart")
-        d.set(timerWarningThreshold, forKey: "cp_timerWarning")
-        d.set(floatingWindowOpacity, forKey: "cp_floatingOpacity")
-
-        // Colors stored as hex
-        d.set(fontColor.hexString, forKey: "cp_fontColor")
-        d.set(backgroundColor.hexString, forKey: "cp_bgColor")
+        d.set(fontSize, forKey: Key.fontSize)
+        d.set(defaultScrollSpeed, forKey: Key.scrollSpeed)
+        d.set(isMirrored, forKey: Key.mirrored)
+        d.set(lineSpacing, forKey: Key.lineSpacing)
+        d.set(horizontalPadding, forKey: Key.horizontalPadding)
+        d.set(timerMode.rawValue, forKey: Key.timerMode)
+        d.set(countdownStartSeconds, forKey: Key.countdownStart)
+        d.set(timerWarningThreshold, forKey: Key.timerWarning)
+        d.set(floatingWindowOpacity, forKey: Key.floatingOpacity)
+        d.set(fontColor.hexString, forKey: Key.fontColor)
+        d.set(backgroundColor.hexString, forKey: Key.bgColor)
     }
 
     func load() {
         let d = Self.defaults
-        if d.object(forKey: "cp_fontSize") != nil {
-            fontSize = d.double(forKey: "cp_fontSize")
+        if d.object(forKey: Key.fontSize) != nil {
+            fontSize = d.double(forKey: Key.fontSize)
         }
-        if d.object(forKey: "cp_scrollSpeed") != nil {
-            defaultScrollSpeed = d.double(forKey: "cp_scrollSpeed")
+        if d.object(forKey: Key.scrollSpeed) != nil {
+            defaultScrollSpeed = d.double(forKey: Key.scrollSpeed)
         }
-        isMirrored = d.bool(forKey: "cp_mirrored")
-        if d.object(forKey: "cp_lineSpacing") != nil {
-            lineSpacing = d.double(forKey: "cp_lineSpacing")
+        isMirrored = d.bool(forKey: Key.mirrored)
+        if d.object(forKey: Key.lineSpacing) != nil {
+            lineSpacing = d.double(forKey: Key.lineSpacing)
         }
-        if d.object(forKey: "cp_horizontalPadding") != nil {
-            horizontalPadding = d.double(forKey: "cp_horizontalPadding")
+        if d.object(forKey: Key.horizontalPadding) != nil {
+            horizontalPadding = d.double(forKey: Key.horizontalPadding)
         }
-        if let modeStr = d.string(forKey: "cp_timerMode"),
+        if let modeStr = d.string(forKey: Key.timerMode),
            let mode = AppSettings.TimerMode(rawValue: modeStr) {
             timerMode = mode
         }
-        if d.object(forKey: "cp_countdownStart") != nil {
-            countdownStartSeconds = d.integer(forKey: "cp_countdownStart")
+        if d.object(forKey: Key.countdownStart) != nil {
+            countdownStartSeconds = d.integer(forKey: Key.countdownStart)
         }
-        if d.object(forKey: "cp_timerWarning") != nil {
-            timerWarningThreshold = d.integer(forKey: "cp_timerWarning")
+        if d.object(forKey: Key.timerWarning) != nil {
+            timerWarningThreshold = d.integer(forKey: Key.timerWarning)
         }
-        if d.object(forKey: "cp_floatingOpacity") != nil {
-            floatingWindowOpacity = d.double(forKey: "cp_floatingOpacity")
+        if d.object(forKey: Key.floatingOpacity) != nil {
+            floatingWindowOpacity = d.double(forKey: Key.floatingOpacity)
         }
-        if let hex = d.string(forKey: "cp_fontColor") {
+        if let hex = d.string(forKey: Key.fontColor) {
             fontColor = Color(hex: hex)
         }
-        if let hex = d.string(forKey: "cp_bgColor") {
+        if let hex = d.string(forKey: Key.bgColor) {
             backgroundColor = Color(hex: hex)
         }
     }
@@ -110,12 +129,7 @@ extension Color {
     }
 
     var hexString: String {
-        guard let components = cgColor?.components, components.count >= 3 else {
-            return "FFFFFF"
-        }
-        let r = Int(components[0] * 255)
-        let g = Int(components[1] * 255)
-        let b = Int(components[2] * 255)
-        return String(format: "%02X%02X%02X", r, g, b)
+        let c = PlatformColor(self).sRGBComponents()
+        return String(format: "%02X%02X%02X", Int(c.r * 255), Int(c.g * 255), Int(c.b * 255))
     }
 }

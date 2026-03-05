@@ -39,7 +39,7 @@ struct SettingsView: View {
                     HStack {
                         Text("Default Speed: \(String(format: "%.1fx", settings.defaultScrollSpeed))")
                         Spacer()
-                        Slider(value: $settings.defaultScrollSpeed, in: 0.5...5.0, step: 0.25)
+                        Slider(value: $settings.defaultScrollSpeed, in: AppSettings.speedMin...AppSettings.speedMax, step: AppSettings.speedStep)
                             .frame(maxWidth: 200)
                     }
 
@@ -107,24 +107,15 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        settings.save()
-                        dismiss()
-                    }
-                }
-            }
-            #else
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        settings.save()
-                        dismiss()
-                    }
-                }
-            }
             #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        settings.save()
+                        dismiss()
+                    }
+                }
+            }
         }
         #if os(iOS)
         .presentationDetents([.large])

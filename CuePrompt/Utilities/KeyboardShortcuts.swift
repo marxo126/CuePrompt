@@ -1,30 +1,12 @@
 import SwiftUI
 
-/// Keyboard shortcut definitions for the CuePrompt app.
-/// These are used via SwiftUI's `.keyboardShortcut()` modifier and `onKeyPress` in views.
-enum CuePromptShortcuts {
-    // Teleprompter controls
-    static let playPause = KeyEquivalent(" ")
-    static let speedUp = KeyEquivalent.upArrow
-    static let speedDown = KeyEquivalent.downArrow
-    static let reset = KeyEquivalent("r")
-    static let mirror = KeyEquivalent("m")
-    static let exitTeleprompter = KeyEquivalent.escape
-
-    #if os(macOS)
-    static let toggleFloating = KeyEquivalent("f")
-    #endif
-}
-
-/// A view modifier that adds teleprompter keyboard shortcuts on iOS via .onKeyPress
-/// (iPad with external keyboard support).
 struct TeleprompterKeyboardModifier: ViewModifier {
     var viewModel: TeleprompterViewModel
     var onDismiss: () -> Void
+    var onToggleFloat: (() -> Void)?
 
     func body(content: Content) -> some View {
         content
-        #if os(iOS)
             .onKeyPress(.space) {
                 viewModel.togglePlayPause()
                 return .handled
@@ -49,12 +31,25 @@ struct TeleprompterKeyboardModifier: ViewModifier {
                 onDismiss()
                 return .handled
             }
-        #endif
+            #if os(macOS)
+            .onKeyPress(.init("f")) {
+                onToggleFloat?()
+                return onToggleFloat != nil ? .handled : .ignored
+            }
+            #endif
     }
 }
 
 extension View {
-    func teleprompterKeyboard(viewModel: TeleprompterViewModel, onDismiss: @escaping () -> Void) -> some View {
-        modifier(TeleprompterKeyboardModifier(viewModel: viewModel, onDismiss: onDismiss))
+    func teleprompterKeyboard(
+        viewModel: TeleprompterViewModel,
+        onDismiss: @escaping () -> Void,
+        onToggleFloat: (() -> Void)? = nil
+    ) -> some View {
+        modifier(TeleprompterKeyboardModifier(
+            viewModel: viewModel,
+            onDismiss: onDismiss,
+            onToggleFloat: onToggleFloat
+        ))
     }
 }

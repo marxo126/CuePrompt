@@ -3,8 +3,11 @@ import SwiftUI
 struct ScriptEditorView: View {
     @Bindable var script: Script
     var settings: AppSettings
-    @State private var showTeleprompter = false
     @State private var editingTitle = false
+    @State private var formattingCoordinator = FormattingCoordinator()
+    #if os(iOS)
+    @State private var showTeleprompter = false
+    #endif
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +30,11 @@ struct ScriptEditorView: View {
                 }
                 Spacer()
                 Button {
+                    #if os(macOS)
+                    FloatingPanelManager.shared.open(settings: settings, script: script)
+                    #else
                     showTeleprompter = true
+                    #endif
                 } label: {
                     Label("Present", systemImage: "play.fill")
                 }
@@ -55,25 +62,19 @@ struct ScriptEditorView: View {
 
             Divider()
 
-            // Editor
-            TextEditor(text: $script.body)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .padding(8)
-                .onChange(of: script.body) {
-                    script.updatedAt = Date()
-                }
+            // Formatting toolbar
+            FormattingToolbar(coordinator: formattingCoordinator)
+
+            Divider()
+
+            // Rich text editor
+            RichTextEditor(script: script, formattingState: formattingCoordinator)
         }
         .navigationTitle(script.title)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(isPresented: $showTeleprompter) {
             TeleprompterView(script: script, settings: settings)
-        }
-        #else
-        .sheet(isPresented: $showTeleprompter) {
-            TeleprompterView(script: script, settings: settings)
-                .frame(minWidth: 600, minHeight: 500)
         }
         #endif
     }

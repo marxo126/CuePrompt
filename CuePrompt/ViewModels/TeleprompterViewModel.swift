@@ -1,35 +1,36 @@
 import SwiftUI
-import Combine
 
-@Observable
+@MainActor @Observable
 final class TeleprompterViewModel {
     var isPlaying: Bool = false
     var scrollSpeed: Double = 1.5
-    var scrollOffset: CGFloat = 0
+    var isMirrored: Bool = false
+
+    // Scroll state driven by ScrollPosition API
+    var scrollPosition = ScrollPosition(edge: .top)
+    var currentScrollOffset: CGFloat = 0
     var contentHeight: CGFloat = 0
     var viewHeight: CGFloat = 0
-    var isMirrored: Bool = false
-    var showTimer: Bool = true
 
     // Timer
     var elapsedSeconds: Int = 0
     var countdownSeconds: Int = 300
     var timerMode: AppSettings.TimerMode = .countUp
+    var timerWarningThreshold: Int = 30
 
-    private var scrollTimer: Timer?
-    private var clockTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) private var scrollTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) private var clockTimer: Timer?
 
     /// Points per second at 1x speed
     private let baseScrollRate: CGFloat = 40.0
 
     var progress: Double {
         guard contentHeight > viewHeight else { return 0 }
-        return min(1.0, Double(scrollOffset / (contentHeight - viewHeight)))
+        return min(1.0, Double(currentScrollOffset / (contentHeight - viewHeight)))
     }
 
-    var isAtEnd: Bool {
-        guard contentHeight > viewHeight else { return true }
-        return scrollOffset >= contentHeight - viewHeight
+    var speedLabel: String {
+        String(format: "%.1fx", scrollSpeed)
     }
 
     var timerDisplay: String {
@@ -49,7 +50,7 @@ final class TeleprompterViewModel {
         if timerMode == .countdown {
             let remaining = countdownSeconds - elapsedSeconds
             if remaining <= 0 { return .red }
-            if remaining <= 30 { return .orange }
+            if remaining <= timerWarningThreshold { return .orange }
         }
         return .white
     }
@@ -73,16 +74,17 @@ final class TeleprompterViewModel {
 
     func reset() {
         pause()
-        scrollOffset = 0
+        currentScrollOffset = 0
         elapsedSeconds = 0
+        scrollPosition.scrollTo(edge: .top)
     }
 
     func increaseSpeed() {
-        scrollSpeed = min(5.0, scrollSpeed + 0.25)
+        scrollSpeed = min(AppSettings.speedMax, scrollSpeed + AppSettings.speedStep)
     }
 
     func decreaseSpeed() {
-        scrollSpeed = max(0.5, scrollSpeed - 0.25)
+        scrollSpeed = max(AppSettings.speedMin, scrollSpeed - AppSettings.speedStep)
     }
 
     func toggleMirror() {
@@ -94,23 +96,38 @@ final class TeleprompterViewModel {
         isMirrored = settings.isMirrored
         timerMode = settings.timerMode
         countdownSeconds = settings.countdownStartSeconds
+        timerWarningThreshold = settings.timerWarningThreshold
+    }
+
+    /// Called by onScrollGeometryChange to sync manual scroll position.
+    /// Skipped during playback to avoid feedback loop with the scroll timer.
+    func updateScrollOffset(_ offset: CGFloat) {
+        guard !isPlaying else { return }
+        currentScrollOffset = offset
     }
 
     // MARK: - Timers
 
     private func startScrollTimer() {
         stopScrollTimer()
-        scrollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let delta = self.baseScrollRate * CGFloat(self.scrollSpeed) / 60.0
-            let newOffset = self.scrollOffset + delta
-            if newOffset >= self.contentHeight - self.viewHeight {
-                self.scrollOffset = max(0, self.contentHeight - self.viewHeight)
-                self.pause()
-            } else {
-                self.scrollOffset = newOffset
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let delta = self.baseScrollRate * CGFloat(self.scrollSpeed) / 60.0
+                let maxOffset = max(0, self.contentHeight - self.viewHeight)
+                let newOffset = self.currentScrollOffset + delta
+                if newOffset >= maxOffset {
+                    self.currentScrollOffset = maxOffset
+                    self.scrollPosition.scrollTo(y: maxOffset)
+                    self.pause()
+                } else {
+                    self.currentScrollOffset = newOffset
+                    self.scrollPosition.scrollTo(y: newOffset)
+                }
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        scrollTimer = timer
     }
 
     private func stopScrollTimer() {
@@ -120,9 +137,13 @@ final class TeleprompterViewModel {
 
     private func startClockTimer() {
         stopClockTimer()
-        clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.elapsedSeconds += 1
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.elapsedSeconds += 1
+            }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        clockTimer = timer
     }
 
     private func stopClockTimer() {
@@ -131,7 +152,7 @@ final class TeleprompterViewModel {
     }
 
     deinit {
-        stopScrollTimer()
-        stopClockTimer()
+        scrollTimer?.invalidate()
+        clockTimer?.invalidate()
     }
 }

@@ -4,7 +4,7 @@ import SwiftData
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var store = ScriptStore()
-    @State private var settings = AppSettings()
+    @Environment(AppSettings.self) private var settings
     @State private var selectedScript: Script?
     @State private var showSettings = false
 
@@ -27,9 +27,6 @@ struct ContentView: View {
                     description: Text("Select a script from the sidebar or create a new one.")
                 )
             }
-        }
-        .onAppear {
-            settings.load()
         }
         #if os(macOS)
         .toolbar {
