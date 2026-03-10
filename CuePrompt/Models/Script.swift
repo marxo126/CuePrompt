@@ -30,11 +30,16 @@ final class Script {
         guard let data = attributedBody else { return nil }
         if cachedAttrData == data { return cachedAttrString }
         cachedAttrData = data
-        cachedAttrString = try? NSAttributedString(
+        // Try RTF first, fall back to RTFD for existing data
+        cachedAttrString = (try? NSAttributedString(
+            data: data,
+            options: [.documentType: NSAttributedString.DocumentType.rtf],
+            documentAttributes: nil
+        )) ?? (try? NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.rtfd],
             documentAttributes: nil
-        )
+        ))
         return cachedAttrString
     }
 
@@ -43,7 +48,7 @@ final class Script {
         let range = NSRange(location: 0, length: attrString.length)
         attributedBody = try? attrString.data(
             from: range,
-            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
         )
         body = attrString.string
         updatedAt = Date()

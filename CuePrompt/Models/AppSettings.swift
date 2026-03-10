@@ -32,6 +32,9 @@ final class AppSettings {
     // Presentation mode (iOS)
     var presentationMode: PresentationMode = .resizableSheet
 
+    // PiP settings (iOS)
+    var pipTextScale: Double = 0.6
+
     enum TimerMode: String, CaseIterable {
         case countUp = "Count Up"
         case countdown = "Countdown"
@@ -59,6 +62,7 @@ final class AppSettings {
         static let fontColor = "cp_fontColor"
         static let bgColor = "cp_bgColor"
         static let presentationMode = "cp_presentationMode"
+        static let pipTextScale = "cp_pipTextScale"
     }
 
     func save() {
@@ -75,35 +79,36 @@ final class AppSettings {
         d.set(fontColor.hexString, forKey: Key.fontColor)
         d.set(backgroundColor.hexString, forKey: Key.bgColor)
         d.set(presentationMode.rawValue, forKey: Key.presentationMode)
+        d.set(pipTextScale, forKey: Key.pipTextScale)
     }
 
     func load() {
         let d = Self.defaults
         if d.object(forKey: Key.fontSize) != nil {
-            fontSize = d.double(forKey: Key.fontSize)
+            fontSize = d.double(forKey: Key.fontSize).clamped(to: 8...200)
         }
         if d.object(forKey: Key.scrollSpeed) != nil {
-            defaultScrollSpeed = d.double(forKey: Key.scrollSpeed)
+            defaultScrollSpeed = d.double(forKey: Key.scrollSpeed).clamped(to: Self.speedMin...Self.speedMax)
         }
         isMirrored = d.bool(forKey: Key.mirrored)
         if d.object(forKey: Key.lineSpacing) != nil {
-            lineSpacing = d.double(forKey: Key.lineSpacing)
+            lineSpacing = d.double(forKey: Key.lineSpacing).clamped(to: 0...100)
         }
         if d.object(forKey: Key.horizontalPadding) != nil {
-            horizontalPadding = d.double(forKey: Key.horizontalPadding)
+            horizontalPadding = d.double(forKey: Key.horizontalPadding).clamped(to: 0...200)
         }
         if let modeStr = d.string(forKey: Key.timerMode),
            let mode = AppSettings.TimerMode(rawValue: modeStr) {
             timerMode = mode
         }
         if d.object(forKey: Key.countdownStart) != nil {
-            countdownStartSeconds = d.integer(forKey: Key.countdownStart)
+            countdownStartSeconds = d.integer(forKey: Key.countdownStart).clamped(to: 1...7200)
         }
         if d.object(forKey: Key.timerWarning) != nil {
-            timerWarningThreshold = d.integer(forKey: Key.timerWarning)
+            timerWarningThreshold = d.integer(forKey: Key.timerWarning).clamped(to: 0...3600)
         }
         if d.object(forKey: Key.floatingOpacity) != nil {
-            floatingWindowOpacity = d.double(forKey: Key.floatingOpacity)
+            floatingWindowOpacity = d.double(forKey: Key.floatingOpacity).clamped(to: 0.1...1.0)
         }
         if let hex = d.string(forKey: Key.fontColor) {
             fontColor = Color(hex: hex)
@@ -115,6 +120,17 @@ final class AppSettings {
            let mode = PresentationMode(rawValue: modeStr) {
             presentationMode = mode
         }
+        if d.object(forKey: Key.pipTextScale) != nil {
+            pipTextScale = d.double(forKey: Key.pipTextScale).clamped(to: 0.1...2.0)
+        }
+    }
+}
+
+// MARK: - Clamping
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 

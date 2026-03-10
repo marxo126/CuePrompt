@@ -33,9 +33,25 @@ final class ScriptStore {
         try? context.save()
     }
 
+    private static let maxImportSize: Int = 10 * 1024 * 1024 // 10 MB
+
     func importTextFile(url: URL, context: ModelContext) -> Script? {
         guard url.startAccessingSecurityScopedResource() else { return nil }
         defer { url.stopAccessingSecurityScopedResource() }
+
+        // Validate file size
+        guard let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = resourceValues.fileSize,
+              fileSize <= Self.maxImportSize else {
+            return nil
+        }
+
+        // Validate file type is plain text
+        if let ext = url.pathExtension.isEmpty ? nil : url.pathExtension,
+           let utType = UTType(filenameExtension: ext),
+           !utType.conforms(to: .plainText) {
+            return nil
+        }
 
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {

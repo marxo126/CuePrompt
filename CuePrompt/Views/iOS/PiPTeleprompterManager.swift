@@ -12,7 +12,7 @@ final class PiPTeleprompterManager: NSObject {
     var isPiPActive = false
 
     private var pipController: AVPictureInPictureController?
-    private var displayLayer = AVSampleBufferDisplayLayer()
+    private(set) var displayLayer = AVSampleBufferDisplayLayer()
     @ObservationIgnored nonisolated(unsafe) private var renderTimer: Timer?
     @ObservationIgnored nonisolated(unsafe) private var pipPossibleRetryTimer: Timer?
     private var pendingStart = false
@@ -29,49 +29,40 @@ final class PiPTeleprompterManager: NSObject {
     private var cachedPlainTextAttrs: [NSAttributedString.Key: Any]?
     private var cachedFontSize: Double = 0
     private var cachedFontColor: Color = .white
+    private var cachedPipTextScale: Double = 0
     private var cachedScriptUpdatedAt: Date?
     private var cachedBgColor: UIColor?
     private var cachedTextColor: UIColor?
-    private var cachedFormatDescription: CMFormatDescription?
     private static let colorSpace = CGColorSpaceCreateDeviceRGB()
     private static let renderSize = CGSize(width: 680, height: 400)
     private static let renderWidth = Int(renderSize.width)
     private static let renderHeight = Int(renderSize.height)
+    private static let margin: CGFloat = 16
+    private var speedOverlayOpacity: CGFloat = 0
+    private var cachedSpeedLabel: String?
+    private var cachedFormatDescription: CMFormatDescription?
+    private static let overlayFont = UIFont.systemFont(ofSize: 18, weight: .semibold)
+    private static let centerLineColor = UIColor.red.withAlphaComponent(0.5)
     private var pixelBufferPool: CVPixelBufferPool?
 
-    // The inline UIView hosting the display layer (must be in the view hierarchy)
-    // Uses a small but non-zero size — PiP requires the layer to be "visible"
+    // The display layer must be in the view hierarchy for PiP to work.
+    // PiPInlineView adds it to a fresh UIView via CALayer (not UIView reparenting).
     static let inlineSize = CGSize(width: 4, height: 3)
-
-    private(set) var bufferView: UIView = {
-        let view = UIView(frame: CGRect(origin: .zero, size: inlineSize))
-        view.isUserInteractionEnabled = false
-        view.clipsToBounds = true
-        return view
-    }()
 
     private override init() {
         super.init()
-        setupDisplayLayer()
-        setupPixelBufferPool()
-    }
-
-    // MARK: - Setup
-
-    private func setupDisplayLayer() {
         displayLayer.videoGravity = .resizeAspect
         displayLayer.frame = CGRect(origin: .zero, size: Self.inlineSize)
-        bufferView.layer.addSublayer(displayLayer)
+        setupPixelBufferPool()
     }
 
     private func setupPixelBufferPool() {
         let poolAttrs: [String: Any] = [kCVPixelBufferPoolMinimumBufferCountKey as String: 3]
         let pixelAttrs: [String: Any] = [
-            kCVPixelBufferWidthKey as String: Int(Self.renderSize.width),
-            kCVPixelBufferHeightKey as String: Int(Self.renderSize.height),
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
-            kCVPixelBufferCGImageCompatibilityKey as String: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+            kCVPixelBufferWidthKey as String: Self.renderWidth,
+            kCVPixelBufferHeightKey as String: Self.renderHeight,
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
         ]
         CVPixelBufferPoolCreate(kCFAllocatorDefault, poolAttrs as CFDictionary, pixelAttrs as CFDictionary, &pixelBufferPool)
     }
@@ -97,7 +88,7 @@ final class PiPTeleprompterManager: NSObject {
         retryCount = 0
 
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 guard let self, self.pendingStart else {
                     self?.stopRetryTimer()
                     return
@@ -110,8 +101,7 @@ final class PiPTeleprompterManager: NSObject {
                     controller.startPictureInPicture()
                 } else if self.retryCount >= Self.maxRetries {
                     print("[PiP] Gave up waiting for PiP to become possible")
-                    self.pendingStart = false
-                    self.stopRetryTimer()
+                    self.cleanup()
                 }
             }
         }
@@ -132,6 +122,14 @@ final class PiPTeleprompterManager: NSObject {
         self.viewModel = viewModel
         viewModel.applySettings(settings)
         invalidateCache()
+
+        // Set virtual content dimensions so the scroll timer doesn't immediately auto-pause
+        let textHeight = measureTextHeight(script: script, settings: settings)
+        viewModel.viewHeight = Self.renderSize.height
+        viewModel.contentHeight = textHeight + Self.renderSize.height // add padding like the real teleprompter
+
+        // PiP viewport is much smaller — halve the scroll speed so text doesn't fly by
+        viewModel.scrollSpeed = max(AppSettings.speedMin, settings.defaultScrollSpeed * 0.5)
 
         // Activate audio session (PiP requires this)
         do {
@@ -176,6 +174,11 @@ final class PiPTeleprompterManager: NSObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
+    private func showSpeedOverlay() {
+        speedOverlayOpacity = 1.0
+        cachedSpeedLabel = viewModel?.speedLabel
+    }
+
     private func invalidateCache() {
         cachedScaledText = nil
         cachedPlainTextAttrs = nil
@@ -183,6 +186,25 @@ final class PiPTeleprompterManager: NSObject {
         cachedTextColor = nil
         cachedScriptUpdatedAt = nil
         cachedFontSize = 0
+        cachedPipTextScale = 0
+        cachedSpeedLabel = nil
+    }
+
+    // MARK: - Text Measurement
+
+    private func measureTextHeight(script: Script, settings: AppSettings) -> CGFloat {
+        let textWidth = Self.renderSize.width - Self.margin * 2
+        let constraintSize = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
+
+        if script.attributedString != nil {
+            let scaled = scaledTextForPiP(script: script, settings: settings)
+            let rect = scaled.boundingRect(with: constraintSize, options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+            return rect.height
+        } else {
+            let attrs = plainTextAttrs(settings: settings)
+            let rect = (script.body as NSString).boundingRect(with: constraintSize, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs, context: nil)
+            return rect.height
+        }
     }
 
     // MARK: - Rendering
@@ -190,7 +212,7 @@ final class PiPTeleprompterManager: NSObject {
     private func startRendering() {
         stopRendering()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
+            Task { @MainActor in
                 self?.renderFrame()
             }
         }
@@ -207,6 +229,12 @@ final class PiPTeleprompterManager: NSObject {
         guard let script, let settings, let viewModel else { return }
         guard let pool = pixelBufferPool else { return }
 
+        // Drive speed overlay fade from the render loop
+        if speedOverlayOpacity > 0 {
+            speedOverlayOpacity -= 1.0 / 30.0
+            if speedOverlayOpacity < 0 { speedOverlayOpacity = 0 }
+        }
+
         var pixelBuffer: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pixelBuffer) == kCVReturnSuccess,
               let buffer = pixelBuffer else { return }
@@ -221,7 +249,7 @@ final class PiPTeleprompterManager: NSObject {
             bitsPerComponent: 8,
             bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
             space: Self.colorSpace,
-            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
         ) else { return }
 
         // Flip coordinate system for text drawing (CGContext is bottom-up, UIKit is top-down)
@@ -234,16 +262,10 @@ final class PiPTeleprompterManager: NSObject {
 
         guard let sampleBuffer = createSampleBuffer(from: buffer) else { return }
 
-        let sampleRenderer = displayLayer.sampleBufferRenderer
-        if sampleRenderer.status == .failed {
-            sampleRenderer.flush()
+        if displayLayer.status == .failed {
+            displayLayer.flush()
         }
-        sampleRenderer.enqueue(sampleBuffer)
-
-        // Stop timer if not playing (render one final frame for current position)
-        if !viewModel.isPlaying {
-            stopRendering()
-        }
+        displayLayer.enqueue(sampleBuffer)
     }
 
     // MARK: - Text Rendering
@@ -256,17 +278,20 @@ final class PiPTeleprompterManager: NSObject {
             return c
         }()
 
-        let margin: CGFloat = 16
-        let scrollOffset = viewModel.currentScrollOffset * 0.25
+        let scrollOffset = viewModel.currentScrollOffset
+        let textHeight = max(size.height, viewModel.contentHeight)
         let textRect = CGRect(
-            x: margin,
-            y: margin - scrollOffset,
-            width: size.width - margin * 2,
-            height: size.height * 20
+            x: Self.margin,
+            y: Self.margin - scrollOffset,
+            width: size.width - Self.margin * 2,
+            height: textHeight
         )
 
         bgColor.setFill()
         UIRectFill(CGRect(origin: .zero, size: size))
+
+        // Clip to visible area to reduce text layout work
+        UIRectClip(CGRect(origin: .zero, size: size))
 
         if script.attributedString != nil {
             scaledTextForPiP(script: script, settings: settings).draw(in: textRect)
@@ -276,8 +301,28 @@ final class PiPTeleprompterManager: NSObject {
         }
 
         // Center line indicator
-        UIColor.red.withAlphaComponent(0.5).setFill()
+        Self.centerLineColor.setFill()
         UIRectFill(CGRect(x: 0, y: size.height / 2 - 1, width: size.width, height: 2))
+
+        // Speed overlay (shown briefly after skip-button speed change)
+        if speedOverlayOpacity > 0, let label = cachedSpeedLabel {
+            let font = Self.overlayFont
+            let textSize = (label as NSString).size(withAttributes: [.font: font])
+            let pillPadding: CGFloat = 8
+            let pillRect = CGRect(
+                x: size.width - textSize.width - pillPadding * 2 - 8,
+                y: 8,
+                width: textSize.width + pillPadding * 2,
+                height: textSize.height + pillPadding
+            )
+            UIColor.black.withAlphaComponent(0.6 * speedOverlayOpacity).setFill()
+            UIBezierPath(roundedRect: pillRect, cornerRadius: pillRect.height / 2).fill()
+            let textOrigin = CGPoint(x: pillRect.midX - textSize.width / 2, y: pillRect.midY - textSize.height / 2)
+            (label as NSString).draw(at: textOrigin, withAttributes: [
+                .font: font,
+                .foregroundColor: UIColor.white.withAlphaComponent(speedOverlayOpacity),
+            ])
+        }
     }
 
     private func plainTextAttrs(settings: AppSettings) -> [NSAttributedString.Key: Any] {
@@ -292,7 +337,7 @@ final class PiPTeleprompterManager: NSObject {
         style.lineSpacing = settings.lineSpacing * 0.5
 
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: settings.fontSize * 0.6, weight: .medium),
+            .font: UIFont.systemFont(ofSize: settings.fontSize * settings.pipTextScale, weight: .medium),
             .foregroundColor: textColor,
             .paragraphStyle: style,
         ]
@@ -308,7 +353,8 @@ final class PiPTeleprompterManager: NSObject {
         if let cached = cachedScaledText,
            cachedScriptUpdatedAt == currentUpdatedAt,
            cachedFontSize == currentFontSize,
-           cachedFontColor == currentColor {
+           cachedFontColor == currentColor,
+           cachedPipTextScale == settings.pipTextScale {
             return cached
         }
 
@@ -317,11 +363,12 @@ final class PiPTeleprompterManager: NSObject {
             return cachedScaledText!
         }
 
-        let scaled = TeleprompterContentView.scaledAttributedString(attrString, fontSize: currentFontSize * 0.6, fontColor: currentColor)
+        let scaled = TeleprompterContentView.scaledAttributedString(attrString, fontSize: currentFontSize * settings.pipTextScale, fontColor: currentColor)
         cachedScaledText = scaled
         cachedScriptUpdatedAt = currentUpdatedAt
         cachedFontSize = currentFontSize
         cachedFontColor = currentColor
+        cachedPipTextScale = settings.pipTextScale
         return scaled
     }
 
@@ -333,7 +380,11 @@ final class PiPTeleprompterManager: NSObject {
             desc = cached
         } else {
             var formatDescription: CMFormatDescription?
-            CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: buffer, formatDescriptionOut: &formatDescription)
+            CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault,
+                imageBuffer: buffer,
+                formatDescriptionOut: &formatDescription
+            )
             guard let created = formatDescription else { return nil }
             cachedFormatDescription = created
             desc = created
@@ -366,26 +417,24 @@ final class PiPTeleprompterManager: NSObject {
 
 extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             print("[PiP] Will start")
             isPiPActive = true
-            if viewModel?.isPlaying == true {
-                startRendering()
-            } else {
-                renderFrame()
-            }
+            // Auto-play when PiP starts
+            viewModel?.play()
+            startRendering()
         }
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             print("[PiP] Did stop")
             cleanup()
         }
     }
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             print("[PiP] Failed to start: \(error)")
             cleanup()
         }
@@ -396,12 +445,14 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
 
 extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
-        MainActor.assumeIsolated {
+        Task { @MainActor in
             if playing {
                 viewModel?.play()
                 startRendering()
             } else {
                 viewModel?.pause()
+                stopRendering()
+                renderFrame() // one final frame at current position
             }
         }
     }
@@ -419,7 +470,23 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
-        completionHandler()
+        let seconds = CMTimeGetSeconds(skipInterval)
+        nonisolated(unsafe) let handler = completionHandler
+        Task { @MainActor in
+            guard let viewModel else {
+                handler()
+                return
+            }
+            // Repurpose skip buttons for speed control
+            if seconds > 0 {
+                viewModel.increaseSpeed()
+            } else {
+                viewModel.decreaseSpeed()
+            }
+            showSpeedOverlay()
+            renderFrame()
+            handler()
+        }
     }
 }
 
@@ -427,15 +494,14 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
 
 struct PiPInlineView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
-        // Wrap the bufferView in a container to avoid reparenting issues
-        let container = UIView(frame: CGRect(origin: .zero, size: PiPTeleprompterManager.inlineSize))
-        container.isUserInteractionEnabled = false
-        container.clipsToBounds = true
-        let bufferView = PiPTeleprompterManager.shared.bufferView
-        bufferView.frame = container.bounds
-        bufferView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        container.addSubview(bufferView)
-        return container
+        let view = UIView(frame: CGRect(origin: .zero, size: PiPTeleprompterManager.inlineSize))
+        view.isUserInteractionEnabled = false
+        view.clipsToBounds = true
+        // Add the display layer directly — no UIView reparenting
+        let layer = PiPTeleprompterManager.shared.displayLayer
+        layer.frame = view.bounds
+        view.layer.addSublayer(layer)
+        return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {}

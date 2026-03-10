@@ -71,6 +71,18 @@ struct SettingsView: View {
                     }
                 }
 
+                #if os(iOS)
+                // MARK: - PiP (iOS)
+                Section("Picture in Picture") {
+                    HStack {
+                        Text("PiP Text Scale: \(Int(settings.pipTextScale * 100))%")
+                        Spacer()
+                        Slider(value: $settings.pipTextScale, in: 0.3...1.0, step: 0.05)
+                            .frame(maxWidth: 200)
+                    }
+                }
+                #endif
+
                 #if os(macOS)
                 // MARK: - Floating Window
                 Section("Floating Window (macOS)") {

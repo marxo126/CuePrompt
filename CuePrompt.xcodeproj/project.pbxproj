@@ -7,26 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10001 /* CuePromptApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001; };
-		A10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002; };
-		A10003 /* Script.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003; };
-		A10005 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005; };
-		A10017 /* TeleprompterContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10019; };
-		A10006 /* TeleprompterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006; };
-		A10007 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007; };
-		A10008 /* ScriptListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008; };
-		A10009 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009; };
-		A10010 /* TeleprompterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010; };
-		A10011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011; };
-		A10012 /* TimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012; };
-		A10013 /* CueNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013; };
-		A10014 /* FloatingPanelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014; };
-		A10015 /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015; };
-		A10016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10016; };
-		A10020 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020; };
-		A10021 /* FormattingToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021; };
-		A10022 /* TransportControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022; };
-		A10023 /* PiPTeleprompterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023; };
+		A10001 /* CuePromptApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10001 /* CuePromptApp.swift */; };
+		A10002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10002 /* ContentView.swift */; };
+		A10003 /* Script.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10003 /* Script.swift */; };
+		A10005 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10005 /* AppSettings.swift */; };
+		A10006 /* TeleprompterViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10006 /* TeleprompterViewModel.swift */; };
+		A10007 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10007 /* ScriptStore.swift */; };
+		A10008 /* ScriptListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10008 /* ScriptListView.swift */; };
+		A10009 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10009 /* ScriptEditorView.swift */; };
+		A10010 /* TeleprompterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10010 /* TeleprompterView.swift */; };
+		A10011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10011 /* SettingsView.swift */; };
+		A10012 /* TimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10012 /* TimerView.swift */; };
+		A10013 /* CueNoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10013 /* CueNoteView.swift */; };
+		A10014 /* FloatingPanelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10014 /* FloatingPanelManager.swift */; };
+		A10015 /* KeyboardShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10015 /* KeyboardShortcuts.swift */; };
+		A10016 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10016 /* Assets.xcassets */; };
+		A10017 /* TeleprompterContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10019 /* TeleprompterContentView.swift */; };
+		A10020 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10020 /* RichTextEditor.swift */; };
+		A10021 /* FormattingToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10021 /* FormattingToolbar.swift */; };
+		A10022 /* TransportControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10022 /* TransportControlsView.swift */; };
+		A10023 /* PiPTeleprompterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10023 /* PiPTeleprompterManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,7 +34,6 @@
 		B10002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B10003 /* Script.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Script.swift; sourceTree = "<group>"; };
 		B10005 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
-		B10019 /* TeleprompterContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeleprompterContentView.swift; sourceTree = "<group>"; };
 		B10006 /* TeleprompterViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeleprompterViewModel.swift; sourceTree = "<group>"; };
 		B10007 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
 		B10008 /* ScriptListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptListView.swift; sourceTree = "<group>"; };
@@ -48,6 +47,7 @@
 		B10016 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B10017 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10018 /* CuePrompt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CuePrompt.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10019 /* TeleprompterContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeleprompterContentView.swift; sourceTree = "<group>"; };
 		B10020 /* RichTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditor.swift; sourceTree = "<group>"; };
 		B10021 /* FormattingToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingToolbar.swift; sourceTree = "<group>"; };
 		B10022 /* TransportControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportControlsView.swift; sourceTree = "<group>"; };
@@ -65,7 +65,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		D10001 /* Root */ = {
+		D10001 = {
 			isa = PBXGroup;
 			children = (
 				D10002 /* CuePrompt */,
@@ -162,7 +162,7 @@
 /* Begin PBXNativeTarget section */
 		E10001 /* CuePrompt */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F10003;
+			buildConfigurationList = F10003 /* Build configuration list for PBXNativeTarget "CuePrompt" */;
 			buildPhases = (
 				C10002 /* Sources */,
 				C10001 /* Frameworks */,
@@ -192,7 +192,7 @@
 					};
 				};
 			};
-			buildConfigurationList = F10001;
+			buildConfigurationList = F10001 /* Build configuration list for PBXProject "CuePrompt" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -373,7 +373,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = S8V5PAT8SD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -413,7 +413,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = S8V5PAT8SD;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -467,7 +467,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = E10002 /* Project object */;
 }
