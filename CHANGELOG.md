@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### Added
+- Picture in Picture (PiP) teleprompter mode on iOS using AVSampleBufferDisplayLayer
+- PiP text scale setting with slider in Settings
+- Presentation mode picker (Full Screen, Resizable Sheet, Floating PiP) on iOS
+- File import validation: 10MB size limit and UTType plainText check
+- `Comparable.clamped(to:)` extension for readable range clamping
 - Rich text editor with formatting toolbar (bold, italic, underline, font size, text color, highlight, alignment)
 - RTFD storage for attributed text in scripts
 - `TeleprompterContentView` — extracted reusable scroll content with `ScrollPosition` API
@@ -16,6 +21,9 @@
 - `timerWarningThreshold` now wired from AppSettings to ViewModel
 
 ### Changed
+- Rich text serialization switched from RTFD to RTF (simpler, no embedded attachments) with RTFD fallback for backward compatibility
+- PiP audio session uses `.mixWithOthers` so PiP survives when Camera or other apps are opened
+- All UserDefaults numeric values clamped to valid ranges on load (protects against corrupted data)
 - macOS teleprompter opens as floating always-on-top NSPanel instead of modal sheet
 - Teleprompter scrolling uses native `ScrollPosition` + `onScrollGeometryChange` instead of `ScrollView` + `.offset()` hack
 - Combined two `onScrollGeometryChange` observers into one using `ScrollMetrics` struct
