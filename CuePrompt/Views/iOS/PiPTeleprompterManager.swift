@@ -18,6 +18,7 @@ final class PiPTeleprompterManager: NSObject {
     private var pendingStart = false
     private var retryCount = 0
     private static let maxRetries = 20 // 2 seconds at 0.1s intervals
+    private var userStopped = false // distinguishes user stop from system interruption
 
     // Rendering state
     private(set) var script: Script?
@@ -44,6 +45,9 @@ final class PiPTeleprompterManager: NSObject {
     private static let overlayFont = UIFont.systemFont(ofSize: 18, weight: .semibold)
     private static let centerLineColor = UIColor.red.withAlphaComponent(0.5)
     private var pixelBufferPool: CVPixelBufferPool?
+
+    /// How many points one skip-button tap scrolls
+    private static let skipScrollAmount: CGFloat = 120
 
     // The display layer must be in the view hierarchy for PiP to work.
     // PiPInlineView adds it to a fresh UIView via CALayer (not UIView reparenting).
@@ -120,6 +124,7 @@ final class PiPTeleprompterManager: NSObject {
         self.script = script
         self.settings = settings
         self.viewModel = viewModel
+        self.userStopped = false
         viewModel.applySettings(settings)
         invalidateCache()
 
@@ -132,12 +137,7 @@ final class PiPTeleprompterManager: NSObject {
         viewModel.scrollSpeed = max(AppSettings.speedMin, settings.defaultScrollSpeed * 0.5)
 
         // Activate audio session (PiP requires this)
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try AVAudioSession.sharedInstance().setActive(true, options: [])
-        } catch {
-            print("[PiP] Audio session error: \(error)")
-        }
+        activateAudioSession()
 
         // Start continuous rendering — PiP requires active frame delivery
         startRendering()
@@ -156,6 +156,7 @@ final class PiPTeleprompterManager: NSObject {
     }
 
     func stop() {
+        userStopped = true
         pendingStart = false
         pipController?.stopPictureInPicture()
         cleanup()
@@ -171,12 +172,37 @@ final class PiPTeleprompterManager: NSObject {
         settings = nil
         isPiPActive = false
         invalidateCache()
+        deactivateAudioSession()
+    }
+
+    // MARK: - Audio Session
+
+    private func activateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            print("[PiP] Audio session error: \(error)")
+        }
+    }
+
+    private func deactivateAudioSession() {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+
+    // MARK: - Overlay
 
     private func showSpeedOverlay() {
         speedOverlayOpacity = 1.0
         cachedSpeedLabel = viewModel?.speedLabel
+    }
+
+    private func showScrollOverlay() {
+        speedOverlayOpacity = 1.0
+        if let viewModel {
+            let percent = Int(viewModel.progress * 100)
+            cachedSpeedLabel = "\(percent)%"
+        }
     }
 
     private func invalidateCache() {
@@ -304,7 +330,7 @@ final class PiPTeleprompterManager: NSObject {
         Self.centerLineColor.setFill()
         UIRectFill(CGRect(x: 0, y: size.height / 2 - 1, width: size.width, height: 2))
 
-        // Speed overlay (shown briefly after skip-button speed change)
+        // Speed/position overlay (shown briefly after button press)
         if speedOverlayOpacity > 0, let label = cachedSpeedLabel {
             let font = Self.overlayFont
             let textSize = (label as NSString).size(withAttributes: [.font: font])
@@ -420,15 +446,18 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
         MainActor.assumeIsolated {
             print("[PiP] Will start")
             isPiPActive = true
-            viewModel?.play()
-            startRendering()
         }
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated {
             print("[PiP] Did stop")
-            cleanup()
+            isPiPActive = false
+            // Only tear down if the user explicitly stopped PiP.
+            // System-initiated stops (e.g. Camera, phone call) shouldn't destroy state.
+            if userStopped {
+                cleanup()
+            }
         }
     }
 
@@ -438,6 +467,10 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
             cleanup()
         }
     }
+
+    nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        completionHandler(true)
+    }
 }
 
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
@@ -445,13 +478,16 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
 extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
         MainActor.assumeIsolated {
+            guard let viewModel else { return }
             if playing {
-                viewModel?.play()
+                // Force-restart even if already "playing" (state may be stale after system interruption)
+                viewModel.isPlaying = false
+                viewModel.play()
                 startRendering()
             } else {
-                viewModel?.pause()
-                stopRendering()
-                renderFrame() // one final frame at current position
+                viewModel.pause()
+                // Keep rendering so the paused frame stays visible
+                renderFrame()
             }
         }
     }
@@ -469,16 +505,17 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
-        let seconds = CMTimeGetSeconds(skipInterval)
         MainActor.assumeIsolated {
             guard let viewModel else { return }
-            // Repurpose skip buttons for speed control
+            let maxOffset = max(0, viewModel.contentHeight - viewModel.viewHeight)
+            let seconds = CMTimeGetSeconds(skipInterval)
+            // Skip buttons scroll the transcript forward/backward
             if seconds > 0 {
-                viewModel.increaseSpeed()
+                viewModel.currentScrollOffset = min(maxOffset, viewModel.currentScrollOffset + Self.skipScrollAmount)
             } else {
-                viewModel.decreaseSpeed()
+                viewModel.currentScrollOffset = max(0, viewModel.currentScrollOffset - Self.skipScrollAmount)
             }
-            showSpeedOverlay()
+            showScrollOverlay()
             renderFrame()
         }
         completionHandler()
