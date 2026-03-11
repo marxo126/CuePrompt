@@ -88,7 +88,7 @@ final class PiPTeleprompterManager: NSObject {
         retryCount = 0
 
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 guard let self, self.pendingStart else {
                     self?.stopRetryTimer()
                     return
@@ -133,8 +133,8 @@ final class PiPTeleprompterManager: NSObject {
 
         // Activate audio session (PiP requires this)
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-            try AVAudioSession.sharedInstance().setActive(true)
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
         } catch {
             print("[PiP] Audio session error: \(error)")
         }
@@ -212,7 +212,7 @@ final class PiPTeleprompterManager: NSObject {
     private func startRendering() {
         stopRendering()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            MainActor.assumeIsolated {
                 self?.renderFrame()
             }
         }
@@ -417,24 +417,23 @@ final class PiPTeleprompterManager: NSObject {
 
 extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             print("[PiP] Will start")
             isPiPActive = true
-            // Auto-play when PiP starts
             viewModel?.play()
             startRendering()
         }
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             print("[PiP] Did stop")
             cleanup()
         }
     }
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             print("[PiP] Failed to start: \(error)")
             cleanup()
         }
@@ -445,7 +444,7 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
 
 extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             if playing {
                 viewModel?.play()
                 startRendering()
@@ -471,12 +470,8 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         let seconds = CMTimeGetSeconds(skipInterval)
-        nonisolated(unsafe) let handler = completionHandler
-        Task { @MainActor in
-            guard let viewModel else {
-                handler()
-                return
-            }
+        MainActor.assumeIsolated {
+            guard let viewModel else { return }
             // Repurpose skip buttons for speed control
             if seconds > 0 {
                 viewModel.increaseSpeed()
@@ -485,8 +480,8 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
             }
             showSpeedOverlay()
             renderFrame()
-            handler()
         }
+        completionHandler()
     }
 }
 
