@@ -13,7 +13,7 @@ final class PiPTeleprompterManager: NSObject {
 
     private var pipController: AVPictureInPictureController?
     private(set) var displayLayer = AVSampleBufferDisplayLayer()
-    @ObservationIgnored nonisolated(unsafe) private var renderTimer: Timer?
+    @ObservationIgnored nonisolated(unsafe) private var renderSource: DispatchSourceTimer?
     @ObservationIgnored nonisolated(unsafe) private var pipPossibleRetryTimer: Timer?
     private var pendingStart = false
     private var retryCount = 0
@@ -46,12 +46,12 @@ final class PiPTeleprompterManager: NSObject {
     private static let centerLineColor = UIColor.red.withAlphaComponent(0.5)
     private var pixelBufferPool: CVPixelBufferPool?
 
-    /// How many points one skip-button tap scrolls
-    private static let skipScrollAmount: CGFloat = 120
-
     // The display layer must be in the view hierarchy for PiP to work.
     // PiPInlineView adds it to a fresh UIView via CALayer (not UIView reparenting).
     static let inlineSize = CGSize(width: 4, height: 3)
+
+    /// Total "duration" for the PiP timeline (maps scroll range to time)
+    private nonisolated static let timelineDuration: Double = 600 // 10 minutes
 
     private override init() {
         super.init()
@@ -197,14 +197,6 @@ final class PiPTeleprompterManager: NSObject {
         cachedSpeedLabel = viewModel?.speedLabel
     }
 
-    private func showScrollOverlay() {
-        speedOverlayOpacity = 1.0
-        if let viewModel {
-            let percent = Int(viewModel.progress * 100)
-            cachedSpeedLabel = "\(percent)%"
-        }
-    }
-
     private func invalidateCache() {
         cachedScaledText = nil
         cachedPlainTextAttrs = nil
@@ -235,20 +227,23 @@ final class PiPTeleprompterManager: NSObject {
 
     // MARK: - Rendering
 
+    /// Uses DispatchSourceTimer instead of RunLoop Timer for reliable background execution
     private func startRendering() {
         stopRendering()
-        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let source = DispatchSource.makeTimerSource(queue: .main)
+        source.schedule(deadline: .now(), repeating: 1.0 / 30.0)
+        source.setEventHandler { [weak self] in
             MainActor.assumeIsolated {
                 self?.renderFrame()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        renderTimer = timer
+        source.resume()
+        renderSource = source
     }
 
     private func stopRendering() {
-        renderTimer?.invalidate()
-        renderTimer = nil
+        renderSource?.cancel()
+        renderSource = nil
     }
 
     private func renderFrame() {
@@ -286,7 +281,10 @@ final class PiPTeleprompterManager: NSObject {
         renderIntoContext(script: script, settings: settings, viewModel: viewModel)
         UIGraphicsPopContext()
 
-        guard let sampleBuffer = createSampleBuffer(from: buffer) else { return }
+        // Map scroll progress to presentation time so PiP timeline reflects position
+        let progress = viewModel.progress
+        let currentTime = progress * Self.timelineDuration
+        guard let sampleBuffer = createSampleBuffer(from: buffer, atTime: currentTime) else { return }
 
         if displayLayer.status == .failed {
             displayLayer.flush()
@@ -330,7 +328,7 @@ final class PiPTeleprompterManager: NSObject {
         Self.centerLineColor.setFill()
         UIRectFill(CGRect(x: 0, y: size.height / 2 - 1, width: size.width, height: 2))
 
-        // Speed/position overlay (shown briefly after button press)
+        // Speed overlay (shown briefly after skip-button speed change)
         if speedOverlayOpacity > 0, let label = cachedSpeedLabel {
             let font = Self.overlayFont
             let textSize = (label as NSString).size(withAttributes: [.font: font])
@@ -400,7 +398,7 @@ final class PiPTeleprompterManager: NSObject {
 
     // MARK: - CMSampleBuffer
 
-    private func createSampleBuffer(from buffer: CVPixelBuffer) -> CMSampleBuffer? {
+    private func createSampleBuffer(from buffer: CVPixelBuffer, atTime seconds: Double) -> CMSampleBuffer? {
         let desc: CMFormatDescription
         if let cached = cachedFormatDescription {
             desc = cached
@@ -416,10 +414,10 @@ final class PiPTeleprompterManager: NSObject {
             desc = created
         }
 
-        let now = CMTime(value: Int64(CACurrentMediaTime() * 1000), timescale: 1000)
+        let pts = CMTime(value: Int64(seconds * 1000), timescale: 1000)
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: now,
+            presentationTimeStamp: pts,
             decodeTimeStamp: .invalid
         )
 
@@ -451,12 +449,14 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated {
-            print("[PiP] Did stop")
+            print("[PiP] Did stop (userStopped=\(userStopped))")
             isPiPActive = false
-            // Only tear down if the user explicitly stopped PiP.
-            // System-initiated stops (e.g. Camera, phone call) shouldn't destroy state.
             if userStopped {
                 cleanup()
+            } else {
+                // System dismissed PiP (Camera, phone call, etc.)
+                // Keep state alive but re-activate audio session for when PiP restarts
+                activateAudioSession()
             }
         }
     }
@@ -480,20 +480,19 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
         MainActor.assumeIsolated {
             guard let viewModel else { return }
             if playing {
-                // Force-restart even if already "playing" (state may be stale after system interruption)
+                // Force-restart: reset isPlaying so play() doesn't early-return
                 viewModel.isPlaying = false
                 viewModel.play()
                 startRendering()
             } else {
                 viewModel.pause()
-                // Keep rendering so the paused frame stays visible
-                renderFrame()
+                renderFrame() // one final frame at current position
             }
         }
     }
 
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ controller: AVPictureInPictureController) -> CMTimeRange {
-        CMTimeRange(start: .zero, duration: CMTime(value: 3600, timescale: 1))
+        CMTimeRange(start: .zero, duration: CMTime(value: Int64(Self.timelineDuration), timescale: 1))
     }
 
     nonisolated func pictureInPictureControllerIsPlaybackPaused(_ controller: AVPictureInPictureController) -> Bool {
@@ -507,15 +506,14 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         MainActor.assumeIsolated {
             guard let viewModel else { return }
-            let maxOffset = max(0, viewModel.contentHeight - viewModel.viewHeight)
             let seconds = CMTimeGetSeconds(skipInterval)
-            // Skip buttons scroll the transcript forward/backward
+            // Skip buttons control scroll speed
             if seconds > 0 {
-                viewModel.currentScrollOffset = min(maxOffset, viewModel.currentScrollOffset + Self.skipScrollAmount)
+                viewModel.increaseSpeed()
             } else {
-                viewModel.currentScrollOffset = max(0, viewModel.currentScrollOffset - Self.skipScrollAmount)
+                viewModel.decreaseSpeed()
             }
-            showScrollOverlay()
+            showSpeedOverlay()
             renderFrame()
         }
         completionHandler()
