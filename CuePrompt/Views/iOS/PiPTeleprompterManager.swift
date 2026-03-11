@@ -13,12 +13,11 @@ final class PiPTeleprompterManager: NSObject {
 
     private var pipController: AVPictureInPictureController?
     private(set) var displayLayer = AVSampleBufferDisplayLayer()
-    @ObservationIgnored nonisolated(unsafe) private var renderSource: DispatchSourceTimer?
+    @ObservationIgnored nonisolated(unsafe) private var renderTimer: Timer?
     @ObservationIgnored nonisolated(unsafe) private var pipPossibleRetryTimer: Timer?
     private var pendingStart = false
     private var retryCount = 0
     private static let maxRetries = 20 // 2 seconds at 0.1s intervals
-    private var userStopped = false // distinguishes user stop from system interruption
 
     // Rendering state
     private(set) var script: Script?
@@ -49,9 +48,6 @@ final class PiPTeleprompterManager: NSObject {
     // The display layer must be in the view hierarchy for PiP to work.
     // PiPInlineView adds it to a fresh UIView via CALayer (not UIView reparenting).
     static let inlineSize = CGSize(width: 4, height: 3)
-
-    /// Total "duration" for the PiP timeline (maps scroll range to time)
-    private nonisolated static let timelineDuration: Double = 600 // 10 minutes
 
     private override init() {
         super.init()
@@ -124,20 +120,24 @@ final class PiPTeleprompterManager: NSObject {
         self.script = script
         self.settings = settings
         self.viewModel = viewModel
-        self.userStopped = false
         viewModel.applySettings(settings)
         invalidateCache()
 
         // Set virtual content dimensions so the scroll timer doesn't immediately auto-pause
         let textHeight = measureTextHeight(script: script, settings: settings)
         viewModel.viewHeight = Self.renderSize.height
-        viewModel.contentHeight = textHeight + Self.renderSize.height // add padding like the real teleprompter
+        viewModel.contentHeight = textHeight + Self.renderSize.height
 
         // PiP viewport is much smaller — halve the scroll speed so text doesn't fly by
         viewModel.scrollSpeed = max(AppSettings.speedMin, settings.defaultScrollSpeed * 0.5)
 
         // Activate audio session (PiP requires this)
-        activateAudioSession()
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            print("[PiP] Audio session error: \(error)")
+        }
 
         // Start continuous rendering — PiP requires active frame delivery
         startRendering()
@@ -156,7 +156,6 @@ final class PiPTeleprompterManager: NSObject {
     }
 
     func stop() {
-        userStopped = true
         pendingStart = false
         pipController?.stopPictureInPicture()
         cleanup()
@@ -172,25 +171,8 @@ final class PiPTeleprompterManager: NSObject {
         settings = nil
         isPiPActive = false
         invalidateCache()
-        deactivateAudioSession()
-    }
-
-    // MARK: - Audio Session
-
-    private func activateAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try AVAudioSession.sharedInstance().setActive(true, options: [])
-        } catch {
-            print("[PiP] Audio session error: \(error)")
-        }
-    }
-
-    private func deactivateAudioSession() {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
-
-    // MARK: - Overlay
 
     private func showSpeedOverlay() {
         speedOverlayOpacity = 1.0
@@ -227,23 +209,20 @@ final class PiPTeleprompterManager: NSObject {
 
     // MARK: - Rendering
 
-    /// Uses DispatchSourceTimer instead of RunLoop Timer for reliable background execution
     private func startRendering() {
         stopRendering()
-        let source = DispatchSource.makeTimerSource(queue: .main)
-        source.schedule(deadline: .now(), repeating: 1.0 / 30.0)
-        source.setEventHandler { [weak self] in
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.renderFrame()
             }
         }
-        source.resume()
-        renderSource = source
+        RunLoop.main.add(timer, forMode: .common)
+        renderTimer = timer
     }
 
     private func stopRendering() {
-        renderSource?.cancel()
-        renderSource = nil
+        renderTimer?.invalidate()
+        renderTimer = nil
     }
 
     private func renderFrame() {
@@ -281,10 +260,7 @@ final class PiPTeleprompterManager: NSObject {
         renderIntoContext(script: script, settings: settings, viewModel: viewModel)
         UIGraphicsPopContext()
 
-        // Map scroll progress to presentation time so PiP timeline reflects position
-        let progress = viewModel.progress
-        let currentTime = progress * Self.timelineDuration
-        guard let sampleBuffer = createSampleBuffer(from: buffer, atTime: currentTime) else { return }
+        guard let sampleBuffer = createSampleBuffer(from: buffer) else { return }
 
         if displayLayer.status == .failed {
             displayLayer.flush()
@@ -398,7 +374,7 @@ final class PiPTeleprompterManager: NSObject {
 
     // MARK: - CMSampleBuffer
 
-    private func createSampleBuffer(from buffer: CVPixelBuffer, atTime seconds: Double) -> CMSampleBuffer? {
+    private func createSampleBuffer(from buffer: CVPixelBuffer) -> CMSampleBuffer? {
         let desc: CMFormatDescription
         if let cached = cachedFormatDescription {
             desc = cached
@@ -414,10 +390,10 @@ final class PiPTeleprompterManager: NSObject {
             desc = created
         }
 
-        let pts = CMTime(value: Int64(seconds * 1000), timescale: 1000)
+        let now = CMTime(value: Int64(CACurrentMediaTime() * 1000), timescale: 1000)
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: pts,
+            presentationTimeStamp: now,
             decodeTimeStamp: .invalid
         )
 
@@ -444,20 +420,15 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
         MainActor.assumeIsolated {
             print("[PiP] Will start")
             isPiPActive = true
+            viewModel?.play()
+            startRendering()
         }
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated {
-            print("[PiP] Did stop (userStopped=\(userStopped))")
-            isPiPActive = false
-            if userStopped {
-                cleanup()
-            } else {
-                // System dismissed PiP (Camera, phone call, etc.)
-                // Keep state alive but re-activate audio session for when PiP restarts
-                activateAudioSession()
-            }
+            print("[PiP] Did stop")
+            cleanup()
         }
     }
 
@@ -467,10 +438,6 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
             cleanup()
         }
     }
-
-    nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
-        completionHandler(true)
-    }
 }
 
 // MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
@@ -478,21 +445,17 @@ extension PiPTeleprompterManager: AVPictureInPictureControllerDelegate {
 extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
         MainActor.assumeIsolated {
-            guard let viewModel else { return }
             if playing {
-                // Force-restart: reset isPlaying so play() doesn't early-return
-                viewModel.isPlaying = false
-                viewModel.play()
+                viewModel?.play()
                 startRendering()
             } else {
-                viewModel.pause()
-                renderFrame() // one final frame at current position
+                viewModel?.pause()
             }
         }
     }
 
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ controller: AVPictureInPictureController) -> CMTimeRange {
-        CMTimeRange(start: .zero, duration: CMTime(value: Int64(Self.timelineDuration), timescale: 1))
+        CMTimeRange(start: .zero, duration: CMTime(value: 3600, timescale: 1))
     }
 
     nonisolated func pictureInPictureControllerIsPlaybackPaused(_ controller: AVPictureInPictureController) -> Bool {
@@ -504,10 +467,9 @@ extension PiPTeleprompterManager: AVPictureInPictureSampleBufferPlaybackDelegate
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
+        let seconds = CMTimeGetSeconds(skipInterval)
         MainActor.assumeIsolated {
             guard let viewModel else { return }
-            let seconds = CMTimeGetSeconds(skipInterval)
-            // Skip buttons control scroll speed
             if seconds > 0 {
                 viewModel.increaseSpeed()
             } else {
